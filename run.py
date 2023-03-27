@@ -1,11 +1,8 @@
+import json
 import requests
 import datetime
 import time
-
-with open('ya_token.txt') as file1, open('vk_token.txt') as file2, open('vk_user_id.txt') as file3:
-    ya_token = file1.read()
-    vk_token = file2.read()
-    vk_user_id = file3.read()
+from tqdm import tqdm
 
 
 class VK:
@@ -42,13 +39,14 @@ class YA:
         response = requests.get(url, headers=self.headers)
         return response.json()
 
-    def is_file_exist(self, filename):
+    def is_file_exist(self, folder, filename):
         """Метод проверяет существует ли указанный файл"""
         url = self.baseurl + 'v1/disk/resources'
-        params = {'path': filename}
+        path = folder + '/' + filename
+        params = {'path': path}
         resp = requests.get(url, headers=self.headers, params=params)
         if resp.status_code == 200:
-            print(f'Файл {filename} существует')
+            # print(f'Файл {filename} уже существует в папке {folder}')
             return True
         else:
             return False
@@ -58,47 +56,55 @@ class YA:
         url = self.baseurl + 'v1/disk/resources'
         params = {'path': folder}
         resp = requests.put(url, headers=self.headers, params=params)
-        if resp.status_code == 201:
-            print(f'Папка {folder} успешно создана')
-        else:
-            print(f'Ошибка при создании папки {folder}')
-            print(resp.json())
+        # if resp.status_code == 201:
+        #     print(f'Папка {folder} успешно создана')
+        # else:
+        #     print(f'Ошибка при создании папки {folder}')
+        #     print(resp.json())
 
-    def upload(self, path, link_to_img):
+    def upload(self, folder, filename, link_to_img):
         """Метод загружает файл на яндекс диск"""
         url = self.baseurl + 'v1/disk/resources/upload'
+        path = folder + '/' + filename
         params = {'path': path, 'url': link_to_img}
         resp = requests.post(url, headers=self.headers, params=params)
-        if resp.status_code == 202:
-            print(f'Файл {path} успешно загружен')
-        else:
-            print('Ошибка при загрузке файла')
-            print(resp.json())
+        # if resp.status_code == 202:
+        #     print(f'Файл {filename} успешно загружен в папку {folder}')
+        # else:
+        #     print(f'Ошибка при загрузке файла {filename} в папку {folder}')
+        #     print(resp.json())
 
 
-vk = VK(vk_token, vk_user_id)
-ya = YA(ya_token)
+if __name__ == '__main__':
 
-# print(vk.user_info())
-# print(ya.disk_info())
+    with open('config.json') as input_file:
+        config = json.load(input_file)
+    ya_token = config['ya_token']
+    vk_token = config['vk_token']
+    vk_user_id = config['vk_user_id']
 
-photos = vk.get_photos()
+    vk = VK(vk_token, vk_user_id)
+    ya = YA(ya_token)
 
-folder_to_save_photos = vk_user_id
-ya.create_folder(folder_to_save_photos)
+    # print(vk.user_info())
+    # print(ya.disk_info())
 
-for photo in photos['response']['items']:
-    # max_size = max([size['type'] for size in photo['sizes']])
-    flag = False
-    for type_ in 'wzyrqpoxms':
-        if flag:
-            break
-        for size in photo['sizes']:
-            if size['type'] == type_:
-                filename = f"{folder_to_save_photos}/{photo['likes']['count']}.jpg"
-                if ya.is_file_exist(filename):
-                    now = datetime.datetime.now()
-                    filename = f"{folder_to_save_photos}/{photo['likes']['count']}_{now.strftime('%Y-%m-%d_%H-%M-%S')}.jpg"
-                ya.upload(filename, size['url'])
-                time.sleep(1)
-                flag = True
+    photos = vk.get_photos()
+
+    folder = vk_user_id
+    ya.create_folder(folder)
+
+    stat = []
+
+    for photo in tqdm(photos['response']['items']):
+        max_size = max(photo['sizes'], key=lambda x: x['type'])
+        filename = f"{photo['likes']['count']}.jpg"
+        if ya.is_file_exist(folder, filename):
+            now = datetime.datetime.now()
+            filename = f"{photo['likes']['count']}_{now.strftime('%Y-%m-%d_%H-%M-%S_%f')}.jpg"
+        stat.append({'file_name': filename, 'size': max_size['type'], 'folder': folder})
+        ya.upload(folder, filename, max_size['url'])
+        time.sleep(0.2)
+
+    with open('stat.json', 'w', encoding='utf-8') as out_file:
+        json.dump(stat, out_file)
